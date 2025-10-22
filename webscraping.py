@@ -1,5 +1,7 @@
 import time
 import pandas as pd
+import re
+import os
 from selenium import webdriver
 from selenium.webdriver.common.by import By
 from selenium.webdriver.support.ui import WebDriverWait
@@ -9,7 +11,11 @@ from selenium.webdriver.chrome.options import Options
 from webdriver_manager.chrome import ChromeDriverManager
 from selenium.common.exceptions import NoSuchElementException, ElementNotInteractableException, TimeoutException
 
-# ---------------- CONFIGURACIÓN DEL NAVEGADOR ----------------
+# ---------------- CONFIGURACIÓN ----------------
+escritorio = r"F:\Programas sin finalizar\ScrapingSUNAT"
+ruta_entrada = os.path.join(escritorio, "empresas.xlsx")
+ruta_salida = os.path.join(escritorio, "resultados_sunat_detallado.xlsx")
+
 opts = Options()
 opts.add_argument("--start-maximized")
 opts.add_argument("--disable-blink-features=AutomationControlled")
@@ -20,32 +26,14 @@ opts.add_argument("--disable-dev-shm-usage")
 opts.add_argument("--ignore-certificate-errors")
 opts.add_experimental_option("excludeSwitches", ["enable-automation"])
 opts.add_experimental_option('useAutomationExtension', False)
-opts.add_argument("user-agent=Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36")
+opts.add_argument("user-agent=Mozilla/5.0 (Windows NT 10.0; Win64; x64) Chrome/120.0.0.0 Safari/537.36")
 
 service = Service(ChromeDriverManager().install())
 driver = webdriver.Chrome(service=service, options=opts)
 wait = WebDriverWait(driver, 10)
 
-# ---------------- FUNCIONES ----------------
-def buscar_en_universidad_peru(nombre):
-    driver.get("https://www.universidadperu.com/empresas/universidades-del-peru.php")
-    try:
-        input_busqueda = wait.until(EC.presence_of_element_located((By.ID, "buscaempresa1")))
-        input_busqueda.clear()
-        input_busqueda.send_keys(nombre)
-        driver.find_element(By.CSS_SELECTOR, "input[type='submit']").click()
-        time.sleep(2)
 
-        ul = driver.find_element(By.CSS_SELECTOR, "div.clr ul")
-        primer_li = ul.find_elements(By.TAG_NAME, "li")[0]
-        texto = primer_li.text
-        nombre_extraido = texto.split(":")[-1].strip()
-        return nombre_extraido
-    except Exception as e:
-        print(f"❌ No se encontró en UniversidadPeru: {nombre} -> {e}")
-        return None
-
-
+# ---------------- FUNCIÓN PRINCIPAL ----------------
 def buscar_en_sunat(nombre=None, ruc=None):
     driver.get("https://e-consultaruc.sunat.gob.pe/cl-ti-itmrconsruc/FrameCriterioBusquedaWeb.jsp")
     try:
@@ -64,24 +52,44 @@ def buscar_en_sunat(nombre=None, ruc=None):
 
         wait.until(EC.element_to_be_clickable((By.ID, "btnAceptar"))).click()
 
-        # Esperar a que aparezcan los resultados
+        # Esperar a que aparezcan los resultados y abrir el primero
         wait.until(EC.presence_of_element_located((By.TAG_NAME, "a"))).click()
         time.sleep(1)
 
-        nombre_empresa = wait.until(EC.presence_of_all_elements_located((By.TAG_NAME, "h4")))[1].text
 
-        # Intentar abrir los representantes legales
+        # Obtener el nombre y RUC
+        nombre_empresa = wait.until(EC.presence_of_all_elements_located((By.TAG_NAME, "h4")))[1].text
+        match_ruc = re.search(r"(\d{11})", nombre_empresa)
+        ruc_numero = match_ruc.group(1) if match_ruc else ""
+
+        # Verificar si aparece "baja"
+        try:
+            baja = driver.find_element(By.CSS_SELECTOR, "div.list-group-item.list-group-item-dange")
+            if baja:
+                return "baja", "baja", []
+        except NoSuchElementException:
+            pass
+        
+        # Intentar abrir los representantes
         try:
             btn_representante = wait.until(EC.element_to_be_clickable((By.XPATH, "//button[contains(text(),'Representante(s) Legal(es)')]")))
             btn_representante.click()
             time.sleep(1)
 
-            tds = driver.find_elements(By.TAG_NAME, "td")
-            representantes = [td.text for td in tds if td.text.strip() != ""]
+            filas = driver.find_elements(By.CSS_SELECTOR, "table tbody tr")
+            representantes = []
+            for fila in filas:
+                celdas = fila.find_elements(By.TAG_NAME, "td")
+                if len(celdas) >= 4:
+                    dni = celdas[0].text.strip()
+                    nombre_rep = celdas[1].text.strip()
+                    cargo = celdas[2].text.strip()
+                    fecha = celdas[3].text.strip()
+                    representantes.append((dni, nombre_rep, cargo, fecha))
         except (NoSuchElementException, TimeoutException):
             representantes = []
 
-        return nombre_empresa, representantes
+        return ruc_numero, nombre_empresa, representantes
 
     except (NoSuchElementException, ElementNotInteractableException, TimeoutException) as e:
         print(f"⚠️ No se pudo buscar {nombre or ruc}: {e}")
@@ -91,9 +99,9 @@ def buscar_en_sunat(nombre=None, ruc=None):
         return None
 
 
-# ---------------- PROCESAMIENTO DEL EXCEL ----------------
+# ---------------- LECTURA DEL EXCEL ----------------
 try:
-    df = pd.read_excel("empresas.xlsx")
+    df = pd.read_excel(ruta_entrada)
 except Exception as e:
     print(f"⚠️ Error leyendo el archivo Excel: {e}")
     driver.quit()
@@ -104,28 +112,54 @@ resultados = []
 for razon in df["razon_social"]:
     print(f"🔍 Buscando: {razon}")
     data = buscar_en_sunat(nombre=razon)
-    if not data:
-        nombre_alternativo = buscar_en_universidad_peru(razon)
-        if nombre_alternativo:
-            data = buscar_en_sunat(nombre=nombre_alternativo)
 
     if data:
-        nombre_empresa, representantes = data
-        resultados.append({
-            "razon_social": razon,
-            "nombre_encontrado": nombre_empresa,
-            "representantes": ", ".join(representantes)
-        })
+        ruc, nombre_empresa, reps = data
+        if ruc == "baja":
+            resultados.append({
+                "razon_social": razon,
+                "ruc": "baja",
+                "nombre_encontrado": "baja",
+                "dni_representante": "",
+                "nombre_representante": "",
+                "cargo": "",
+                "fecha_designacion": ""
+            })
+        elif reps:
+            for dni, nombre_rep, cargo, fecha in reps:
+                resultados.append({
+                    "razon_social": razon,
+                    "ruc": ruc,
+                    "nombre_encontrado": nombre_empresa,
+                    "dni_representante": dni,
+                    "nombre_representante": nombre_rep,
+                    "cargo": cargo,
+                    "fecha_designacion": fecha
+                })
+        else:
+            resultados.append({
+                "razon_social": razon,
+                "ruc": ruc,
+                "nombre_encontrado": nombre_empresa,
+                "dni_representante": "",
+                "nombre_representante": "",
+                "cargo": "",
+                "fecha_designacion": ""
+            })
     else:
         resultados.append({
             "razon_social": razon,
+            "ruc": "",
             "nombre_encontrado": "No encontrado",
-            "representantes": ""
+            "dni_representante": "",
+            "nombre_representante": "",
+            "cargo": "",
+            "fecha_designacion": ""
         })
 
 # ---------------- GUARDAR RESULTADOS ----------------
 output = pd.DataFrame(resultados)
-output.to_excel("resultados_sunat.xlsx", index=False)
-print("✅ Proceso completado. Resultados guardados en 'resultados_sunat.xlsx'.")
+output.to_excel(ruta_salida, index=False)
+print(f"✅ Proceso completado. Resultados guardados en:\n{ruta_salida}")
 
 driver.quit()
