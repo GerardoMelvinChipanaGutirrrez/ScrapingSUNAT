@@ -2,3 +2,7 @@ venv/
 __pycache__/
 *.pyc
 .env
+resultados_sunat_detallado.xlsx
+resultados_sunat_detallado - copia.xlsx
+empresas_sunat.xlsx
+backup estable.py
