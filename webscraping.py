@@ -47,7 +47,6 @@ def buscar_en_sunat(nombre=None, ruc=None, intentos=2):
 
             # --- Selección de búsqueda por nombre o RUC ---
             if nombre:
-                print("Paso: seleccionar búsqueda por Razón Social")
                 wait.until(EC.element_to_be_clickable((By.ID, "btnPorRazonSocial"))).click()
                 input_nombre = wait.until(EC.presence_of_element_located((By.ID, "txtNombreRazonSocial")))
                 input_nombre.clear()
@@ -65,24 +64,19 @@ def buscar_en_sunat(nombre=None, ruc=None, intentos=2):
                 return None
 
             # --- Click en Aceptar ---
-            print("Paso: hacer click en 'Aceptar'...")
             wait.until(EC.element_to_be_clickable((By.ID, "btnAceptar"))).click()
-            print("  -> Click en 'Aceptar' realizado.")
             time.sleep(1.5)
 
             # --- Esperar lista de resultados ---
-            print("Paso: esperar a que aparezca la lista de resultados (div.list-group a)")
             try:
                 resultados = wait.until(
                     EC.presence_of_all_elements_located((By.CSS_SELECTOR, "div.list-group a"))
                 )
-                print(f"  -> Se encontraron {len(resultados)} enlaces en la lista de resultados.")
             except TimeoutException:
                 print("⚠️ Timeout: no se encontraron elementos 'div.list-group a' después de Aceptar.")
                 continue  # reintenta
 
             # --- Buscar el <a> cuyo segundo <h4> contenga el nombre ---
-            print("Paso: buscar entre los <a> el que tenga en el 2º <h4> el nombre buscado")
             elegido = None
             for idx, a in enumerate(resultados, start=1):
                 try:
@@ -101,10 +95,8 @@ def buscar_en_sunat(nombre=None, ruc=None, intentos=2):
                 continue  # reintenta
 
             # --- Intentar clic en el enlace elegido ---
-            print("Paso: hacer click en el enlace elegido")
             try:
                 elegido.click()
-                print("  -> Clic normal ejecutado en el enlace elegido.")
             except Exception as e_click:
                 print(f"  ⚠️ Clic normal falló: {e_click} -> intento con JavaScript.")
                 try:
@@ -115,17 +107,14 @@ def buscar_en_sunat(nombre=None, ruc=None, intentos=2):
                     continue  # reintenta
 
             # --- Esperar la página de detalle (div.list-group-item) ---
-            print("Paso: esperar que cargue el detalle (div.list-group-item)")
             try:
                 wait.until(EC.presence_of_element_located((By.CSS_SELECTOR, "div.list-group-item")))
-                print("  -> Detalle cargado (existe al menos un div.list-group-item).")
             except TimeoutException:
                 print("⚠️ Timeout: detalle no cargó tras clicar el resultado.")
                 continue  # reintenta
             time.sleep(0.6)
 
             # --- Extraer primer div y RUC ---
-            print("Paso: extraer primer div.list-group-item y obtener RUC")
             primer_divs = driver.find_elements(By.CSS_SELECTOR, "div.list-group-item")
             if not primer_divs:
                 print("  ⚠️ No se encontraron div.list-group-item tras cargar el detalle.")
@@ -136,33 +125,27 @@ def buscar_en_sunat(nombre=None, ruc=None, intentos=2):
                 print(f"  -> Texto del segundo h4 del primer div: '{ruc_texto[:120]}'")
                 match_ruc = re.search(r"(\d{11})", ruc_texto)
                 ruc_numero = match_ruc.group(1) if match_ruc else ""
-                print(f"  -> RUC extraído: '{ruc_numero}'")
             except Exception as e:
                 print(f"  ⚠️ Error al extraer RUC/nombre de primer div: {e}")
                 ruc_numero = ""
 
             # --- Verificar estado activo/habido (divs verdes) ---
-            print("Paso: verificar existencia de divs verdes (list-group-item-success)")
             divs_verdes = driver.find_elements(By.CSS_SELECTOR, "div.list-group-item.list-group-item-success")
-            print(f"  -> Cantidad de divs verdes encontrados: {len(divs_verdes)}")
             if len(divs_verdes) < 2:
                 print(f"⚠️ Empresa {nombre or ruc} no parece activa/habida (se considera baja).")
                 return "baja", "baja", []
 
             # --- Obtener representantes legales (botón y tabla) ---
-            print("Paso: intentar abrir sección de Representante(s) y leer la tabla")
             representantes = []
             try:
                 try:
                     btn_rep = wait.until(EC.element_to_be_clickable((By.XPATH, "//button[contains(., 'Representante')]")))
                     btn_rep.click()
-                    print("  -> Botón 'Representante' clickeado.")
                     time.sleep(0.8)
                 except Exception:
                     print("  -> No se encontró o no se pudo clicar el botón 'Representante' (se intentará leer la tabla si existe).")
 
                 filas_rep = driver.find_elements(By.CSS_SELECTOR, "table tbody tr")
-                print(f"  -> Filas de la tabla encontradas: {len(filas_rep)}")
                 for i, fila in enumerate(filas_rep, start=1):
                     try:
                         celdas = fila.find_elements(By.TAG_NAME, "td")
@@ -202,7 +185,6 @@ def buscar_en_sunat(nombre=None, ruc=None, intentos=2):
     print(f"❌ Falló la búsqueda definitiva para {nombre or ruc} después de {intentos} intentos.")
     return None
 
-
 # ---------------- LECTURA DEL EXCEL ----------------
 try:
     df = pd.read_excel(ruta_entrada)
@@ -211,59 +193,61 @@ except Exception as e:
     driver.quit()
     exit()
 
-resultados = []
+# ---------------- CREAR ARCHIVO DE SALIDA VACÍO ----------------
+from openpyxl import Workbook, load_workbook
 
+if not os.path.exists(ruta_salida):
+    wb = Workbook()
+    ws = wb.active
+    ws.title = "Resultados"
+    ws.append([
+        "razon_social", "ruc", "nombre_encontrado",
+        "dni_representante", "nombre_representante",
+        "cargo", "fecha_designacion"
+    ])
+    wb.save(ruta_salida)
+    print(f"📘 Archivo creado: {ruta_salida}")
+else:
+    print(f"📘 Archivo existente detectado: {ruta_salida}")
+
+# ---------------- PROCESAR CADA EMPRESA ----------------
 for razon in df["razon_social"]:
-    print(f"🔍 Buscando: {razon}")
+    print(f"\n🔍 Buscando: {razon}")
     data = buscar_en_sunat(nombre=razon)
+
+    filas_a_agregar = []
 
     if data:
         ruc, nombre_empresa, reps = data
         if ruc == "baja":
-            resultados.append({
-                "razon_social": razon,
-                "ruc": "baja",
-                "nombre_encontrado": "baja",
-                "dni_representante": "",
-                "nombre_representante": "",
-                "cargo": "",
-                "fecha_designacion": ""
-            })
+            filas_a_agregar.append([
+                razon, "baja", "baja", "", "", "", ""
+            ])
         elif reps:
             for dni, nombre_rep, cargo, fecha in reps:
-                resultados.append({
-                    "razon_social": razon,
-                    "ruc": ruc,
-                    "nombre_encontrado": nombre_empresa,
-                    "dni_representante": dni,
-                    "nombre_representante": nombre_rep,
-                    "cargo": cargo,
-                    "fecha_designacion": fecha
-                })
+                filas_a_agregar.append([
+                    razon, ruc, nombre_empresa, dni, nombre_rep, cargo, fecha
+                ])
         else:
-            resultados.append({
-                "razon_social": razon,
-                "ruc": ruc,
-                "nombre_encontrado": nombre_empresa,
-                "dni_representante": "",
-                "nombre_representante": "",
-                "cargo": "",
-                "fecha_designacion": ""
-            })
+            filas_a_agregar.append([
+                razon, ruc, nombre_empresa, "", "", "", ""
+            ])
     else:
-        resultados.append({
-            "razon_social": razon,
-            "ruc": "",
-            "nombre_encontrado": "No encontrado",
-            "dni_representante": "",
-            "nombre_representante": "",
-            "cargo": "",
-            "fecha_designacion": ""
-        })
+        filas_a_agregar.append([
+            razon, "", "No encontrado", "", "", "", ""
+        ])
 
-# ---------------- GUARDAR RESULTADOS ----------------
-output = pd.DataFrame(resultados)
-output.to_excel(ruta_salida, index=False)
-print(f"✅ Proceso completado. Resultados guardados en:\n{ruta_salida}")
+    # ---------------- GUARDAR RESULTADOS EN EL EXCEL ----------------
+    try:
+        wb = load_workbook(ruta_salida)
+        ws = wb.active
+        for fila in filas_a_agregar:
+            ws.append(fila)
+        wb.save(ruta_salida)
+        print(f"💾 Datos guardados para: {razon}")
+    except Exception as e:
+        print(f"⚠️ Error guardando datos para {razon}: {e}")
+
+print(f"\n✅ Proceso completado. Los resultados se fueron guardando en tiempo real en:\n{ruta_salida}")
 
 driver.quit()
