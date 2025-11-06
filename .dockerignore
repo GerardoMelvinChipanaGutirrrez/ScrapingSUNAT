@@ -1,0 +1,10 @@
+__pycache__
+*.pyc
+.env
+venv
+.git
+.gitignore
+uploads/*
+*.xlsx
+flask==2.3.3
+werkzeug==2.3.7
