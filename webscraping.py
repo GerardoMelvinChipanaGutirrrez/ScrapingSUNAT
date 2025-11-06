@@ -36,8 +36,8 @@ wait = WebDriverWait(driver, 10)
 # ---------------- FUNCIÓN PRINCIPAL (DEBUG PASO A PASO) ----------------
 def buscar_en_sunat(nombre=None, ruc=None, intentos=2):
     """
-    Versión con prints detallados después de dar clic en Aceptar
-    para depurar en qué paso falla la navegación/extracción.
+    Versión mejorada: detecta automáticamente si la búsqueda es por RUC o por nombre.
+    Si es por RUC, salta la parte de 'div.list-group a' y va directo al detalle.
     """
     for intento in range(1, intentos + 1):
         try:
@@ -53,7 +53,6 @@ def buscar_en_sunat(nombre=None, ruc=None, intentos=2):
                 input_nombre.send_keys(nombre)
                 print(f"  -> Nombre ingresado: {nombre}")
             elif ruc:
-                print("Paso: seleccionar búsqueda por RUC")
                 wait.until(EC.element_to_be_clickable((By.ID, "btnPorRuc"))).click()
                 input_ruc = wait.until(EC.presence_of_element_located((By.ID, "txtRuc")))
                 input_ruc.clear()
@@ -67,75 +66,103 @@ def buscar_en_sunat(nombre=None, ruc=None, intentos=2):
             wait.until(EC.element_to_be_clickable((By.ID, "btnAceptar"))).click()
             time.sleep(1.5)
 
-            # --- Esperar lista de resultados ---
-            try:
-                resultados = wait.until(
-                    EC.presence_of_all_elements_located((By.CSS_SELECTOR, "div.list-group a"))
-                )
-            except TimeoutException:
-                print("⚠️ Timeout: no se encontraron elementos 'div.list-group a' después de Aceptar.")
-                continue  # reintenta
-
-            # --- Buscar el <a> cuyo segundo <h4> contenga el nombre ---
-            elegido = None
-            for idx, a in enumerate(resultados, start=1):
+            # --- Si la búsqueda fue por NOMBRE ---
+            if nombre and not ruc:
                 try:
-                    h4s = a.find_elements(By.TAG_NAME, "h4")
-                    texto_h4 = h4s[1].text.strip().upper() if len(h4s) >= 2 else ""
-                    print(f"    Enlace #{idx}: segundo h4 -> '{texto_h4[:80]}'")
-                    if nombre and nombre.strip().upper() in texto_h4:
-                        elegido = a
-                        print(f"    -> Coincidencia encontrada en enlace #{idx}.")
-                        break
-                except Exception as e:
-                    print(f"    ⚠️ Error leyendo h4 del enlace #{idx}: {e}")
+                    resultados = wait.until(
+                        EC.presence_of_all_elements_located((By.CSS_SELECTOR, "div.list-group a"))
+                    )
+                    print(f"🔍 Se encontraron {len(resultados)} posibles resultados.")
+                except TimeoutException:
+                    print("⚠️ Timeout: no se encontraron elementos 'div.list-group a' (probablemente sin resultados).")
+                    # Buscar en Google (universidadperu.com)
+                    ruc_google = buscar_ruc_en_universidad_peru(nombre)
+                    if ruc_google:
+                        print(f"🔁 Reintentando búsqueda en SUNAT por RUC: {ruc_google}")
+                        resultado_ruc = buscar_en_sunat(ruc=ruc_google)
+                        return resultado_ruc
+                    continue
 
-            if not elegido:
-                print(f"⚠️ No se encontró coincidencia exacta para {nombre or ruc} entre los resultados.")
-                continue  # reintenta
+                # Buscar coincidencia exacta por nombre
+                elegido = None
+                for idx, a in enumerate(resultados, start=1):
+                    try:
+                        h4s = a.find_elements(By.TAG_NAME, "h4")
+                        texto_h4 = h4s[1].text.strip().upper() if len(h4s) >= 2 else ""
+                        print(f"    Enlace #{idx}: segundo h4 -> '{texto_h4[:80]}'")
+                        if nombre.strip().upper() in texto_h4:
+                            elegido = a
+                            print(f"    ✅ Coincidencia encontrada en enlace #{idx}.")
+                            break
+                    except Exception as e:
+                        print(f"    ⚠️ Error leyendo h4 del enlace #{idx}: {e}")
 
-            # --- Intentar clic en el enlace elegido ---
-            try:
-                elegido.click()
-            except Exception as e_click:
-                print(f"  ⚠️ Clic normal falló: {e_click} -> intento con JavaScript.")
+                # Si no encontró coincidencia, probar con Google
+                if not elegido:
+                    print(f"⚠️ No se encontró coincidencia exacta para {nombre}. Buscando RUC en universidadperu.com...")
+                    ruc_google = buscar_ruc_en_universidad_peru(nombre)
+                    if ruc_google:
+                        print(f"🔁 Reintentando búsqueda en SUNAT por RUC: {ruc_google}")
+                        resultado_ruc = buscar_en_sunat(ruc=ruc_google)
+                        return resultado_ruc
+                    else:
+                        continue
+
+                # Clic en el enlace elegido
                 try:
-                    driver.execute_script("arguments[0].click();", elegido)
-                    print("  -> Clic via JS ejecutado.")
-                except Exception as e_js:
-                    print(f"  ❌ Clic via JS también falló: {e_js}")
-                    continue  # reintenta
+                    elegido.click()
+                except Exception as e_click:
+                    print(f"  ⚠️ Clic normal falló: {e_click} -> intento con JavaScript.")
+                    try:
+                        driver.execute_script("arguments[0].click();", elegido)
+                        print("  -> Clic via JS ejecutado.")
+                    except Exception as e_js:
+                        print(f"  ❌ Clic via JS también falló: {e_js}")
+                        continue
 
-            # --- Esperar la página de detalle (div.list-group-item) ---
-            try:
+                # Esperar detalle
                 wait.until(EC.presence_of_element_located((By.CSS_SELECTOR, "div.list-group-item")))
-            except TimeoutException:
-                print("⚠️ Timeout: detalle no cargó tras clicar el resultado.")
-                continue  # reintenta
+
+            # --- Si la búsqueda fue por RUC ---
+            else:
+                print("🧾 Búsqueda por RUC detectada. Saltando lista de resultados.")
+                wait.until(EC.presence_of_element_located((By.XPATH, "//h4[contains(text(),'Número de RUC')]")))
+
             time.sleep(0.6)
 
-            # --- Extraer primer div y RUC ---
-            primer_divs = driver.find_elements(By.CSS_SELECTOR, "div.list-group-item")
-            if not primer_divs:
-                print("  ⚠️ No se encontraron div.list-group-item tras cargar el detalle.")
-                continue
+            # --- Extraer RUC y nombre de la empresa ---
             try:
-                h4s = primer_divs[0].find_elements(By.TAG_NAME, "h4")
-                ruc_texto = h4s[1].text.strip() if len(h4s) >= 2 else ""
-                print(f"  -> Texto del segundo h4 del primer div: '{ruc_texto[:120]}'")
-                match_ruc = re.search(r"(\d{11})", ruc_texto)
-                ruc_numero = match_ruc.group(1) if match_ruc else ""
+                # Esperamos que el primer div esté presente y visible
+                primer_div = wait.until(EC.presence_of_element_located((By.CSS_SELECTOR, "div.list-group-item")))
+                time.sleep(0.5)  # Pequeña espera para asegurar que el contenido esté cargado
+                
+                # Obtener el texto completo del div que contiene RUC y nombre
+                texto_completo = primer_div.text
+                print(f"  -> Texto completo del div: '{texto_completo[:120]}'")
+                
+                # Extraer RUC y nombre usando regex
+                match_ruc_nombre = re.search(r"(\d{11})\s*-\s*(.+)", texto_completo)
+                if match_ruc_nombre:
+                    ruc_numero = match_ruc_nombre.group(1)
+                    nombre_empresa = match_ruc_nombre.group(2).strip()
+                    print(f"  ✓ RUC extraído: {ruc_numero}")
+                    print(f"  ✓ Nombre extraído: {nombre_empresa}")
+                else:
+                    print("  ⚠️ No se pudo extraer RUC/nombre del texto")
+                    ruc_numero = ""
+                    nombre_empresa = texto_completo
             except Exception as e:
-                print(f"  ⚠️ Error al extraer RUC/nombre de primer div: {e}")
+                print(f"  ⚠️ Error al extraer RUC/nombre: {e}")
                 ruc_numero = ""
+                nombre_empresa = ""
 
-            # --- Verificar estado activo/habido (divs verdes) ---
+            # --- Verificar estado activo/habido ---
             divs_verdes = driver.find_elements(By.CSS_SELECTOR, "div.list-group-item.list-group-item-success")
             if len(divs_verdes) < 2:
                 print(f"⚠️ Empresa {nombre or ruc} no parece activa/habida (se considera baja).")
                 return "baja", "baja", []
 
-            # --- Obtener representantes legales (botón y tabla) ---
+            # --- Obtener representantes legales ---
             representantes = []
             try:
                 try:
@@ -143,7 +170,7 @@ def buscar_en_sunat(nombre=None, ruc=None, intentos=2):
                     btn_rep.click()
                     time.sleep(0.8)
                 except Exception:
-                    print("  -> No se encontró o no se pudo clicar el botón 'Representante' (se intentará leer la tabla si existe).")
+                    print("  -> No se encontró o no se pudo clicar el botón 'Representante' (se intentará leer la tabla).")
 
                 filas_rep = driver.find_elements(By.CSS_SELECTOR, "table tbody tr")
                 for i, fila in enumerate(filas_rep, start=1):
@@ -164,16 +191,6 @@ def buscar_en_sunat(nombre=None, ruc=None, intentos=2):
                 print(f"  ⚠️ Error al extraer representantes: {e_rep}")
                 representantes = []
 
-            # --- Obtener nombre de la empresa ---
-            print("Paso: obtener nombre de la empresa desde el segundo h4 (primer div)")
-            nombre_empresa = ""
-            try:
-                if primer_divs and len(primer_divs[0].find_elements(By.TAG_NAME, "h4")) >= 2:
-                    nombre_empresa = primer_divs[0].find_elements(By.TAG_NAME, "h4")[1].text.strip()
-                    print(f"  -> Nombre empresa: '{nombre_empresa}'")
-            except Exception as e_nom:
-                print(f"  ⚠️ Error obteniendo nombre de la empresa: {e_nom}")
-
             print(f"=== FIN intento {intento} - éxito ===")
             return ruc_numero, nombre_empresa, representantes
 
@@ -184,6 +201,71 @@ def buscar_en_sunat(nombre=None, ruc=None, intentos=2):
 
     print(f"❌ Falló la búsqueda definitiva para {nombre or ruc} después de {intentos} intentos.")
     return None
+
+
+def buscar_ruc_en_universidad_peru(nombre):
+    """
+    Busca en Google la página de universidadperu.com asociada a una empresa y extrae su RUC.
+    Retorna el RUC encontrado o None si no se halla.
+    """
+    try:
+        print(f"🌐 Buscando en Google: {nombre}")
+        driver.get("https://www.google.com")
+        time.sleep(1)
+
+        # Aceptar cookies si aparece el botón (solo la primera vez)
+        try:
+            btn_aceptar = driver.find_element(By.XPATH, "//button//*[text()='Aceptar todo']/..")
+            btn_aceptar.click()
+            time.sleep(1)
+        except:
+            pass  # Puede que no aparezca
+
+        # Buscar la razón social en Google
+        caja = wait.until(EC.presence_of_element_located((By.NAME, "q")))
+        caja.clear()
+        caja.send_keys(nombre)
+        caja.submit()
+        time.sleep(2)
+
+        # Buscar el primer resultado que sea de universidadperu.com
+        enlaces = driver.find_elements(By.CSS_SELECTOR, "a h3")
+        url_universidad_peru = None
+
+        for enlace in enlaces:
+            try:
+                a_tag = enlace.find_element(By.XPATH, "./ancestor::a")
+                href = a_tag.get_attribute("href")
+                if "universidadperu.com" in href:
+                    url_universidad_peru = href
+                    print(f"  🔗 Enlace encontrado: {href}")
+                    break
+            except Exception:
+                continue
+
+        if not url_universidad_peru:
+            print("⚠️ No se encontró ningún resultado de universidadperu.com en Google.")
+            return None
+
+        # Entrar al enlace de universidadperu.com
+        driver.get(url_universidad_peru)
+        time.sleep(2)
+
+        # Buscar el RUC en el texto del cuerpo
+        texto = driver.find_element(By.TAG_NAME, "body").text
+        match = re.search(r"\b(\d{11})\b", texto)
+        if match:
+            ruc_encontrado = match.group(1)
+            print(f"  ✅ RUC encontrado en universidadperu.com: {ruc_encontrado}")
+            return ruc_encontrado
+        else:
+            print("⚠️ No se encontró ningún número de RUC en la página.")
+            return None
+
+    except Exception as e:
+        print(f"❌ Error durante la búsqueda del RUC en universidadperu.com: {e}")
+        return None
+
 
 # ---------------- LECTURA DEL EXCEL ----------------
 try:
