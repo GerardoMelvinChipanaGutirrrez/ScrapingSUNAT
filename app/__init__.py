@@ -3,9 +3,19 @@ from werkzeug.utils import secure_filename
 import os
 import pandas as pd
 from .scraper.sunat import SunatScraper
+import logging
 
-app = Flask(__name__)
-app.config.from_object('app.config.Config')
+def create_app():
+    app = Flask(__name__, static_folder="static", template_folder="templates")
+    app.config.from_mapping(SECRET_KEY="dev-key")
+
+    @app.route("/")
+    def index():
+        return "SUNAT scraper running"
+
+    return app
+
+app = create_app()
 
 def allowed_file(filename):
     return '.' in filename and filename.rsplit('.', 1)[1].lower() in app.config['ALLOWED_EXTENSIONS']

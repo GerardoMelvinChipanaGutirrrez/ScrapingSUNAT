@@ -5,6 +5,20 @@ RUN apt-get update && apt-get install -y \
     wget \
     gnupg \
     unzip \
+    ca-certificates \
+    fonts-liberation \
+    libnss3 \
+    libgconf-2-4 \
+    libxss1 \
+    libasound2 \
+    libatk1.0-0 \
+    libatk-bridge2.0-0 \
+    libcups2 \
+    libdbus-1-3 \
+    libgtk-3-0 \
+    libx11-xcb1 \
+    libxcomposite1 \
+    libxrandr2 \
     chromium \
     chromium-driver \
     && rm -rf /var/lib/apt/lists/*
@@ -33,4 +47,4 @@ RUN mkdir -p uploads
 EXPOSE 8000
 
 # Comando para ejecutar la aplicación
-CMD ["gunicorn", "--bind", "0.0.0.0:8000", "run:app"]
+CMD ["sh", "-c", "gunicorn --bind 0.0.0.0:${PORT:-8000} run:app --workers 1 --timeout 120 --log-level debug"]
