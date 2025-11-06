@@ -1,0 +1,27 @@
+{% extends "base.html" %}
+
+{% block content %}
+<div class="container">
+    <h1>SUNAT Scraper</h1>
+    
+    <div class="upload-form">
+        <form id="uploadForm" enctype="multipart/form-data">
+            <div class="form-group">
+                <label>Seleccione archivo Excel:</label>
+                <input type="file" name="file" accept=".xlsx,.xls" required>
+            </div>
+            <button type="submit" class="btn btn-primary">Procesar</button>
+        </form>
+    </div>
+
+    <div id="results" class="mt-4" style="display:none">
+        <h3>Resultados:</h3>
+        <div class="progress mb-3">
+            <div class="progress-bar" role="progressbar"></div>
+        </div>
+        <div class="results-table">
+            <!-- Aquí se mostrarán los resultados -->
+        </div>
+    </div>
+</div>
+{% endblock %}
