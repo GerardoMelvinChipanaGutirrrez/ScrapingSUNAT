@@ -205,11 +205,12 @@ def buscar_en_sunat(nombre=None, ruc=None, intentos=2):
 
 def buscar_ruc_en_universidad_peru(nombre):
     """
-    Busca en Google la página de universidadperu.com asociada a una empresa y extrae su RUC.
-    Retorna el RUC encontrado o None si no se halla.
+    Busca en Google con la consulta "<nombre> ruc universidad peru"
+    y extrae el RUC directamente desde la página de universidadperu.com.
     """
     try:
-        print(f"🌐 Buscando en Google: {nombre}")
+        consulta = f"{nombre} ruc universidad peru"
+        print(f"🌐 Buscando en Google: {consulta}")
         driver.get("https://www.google.com")
         time.sleep(1)
 
@@ -221,14 +222,14 @@ def buscar_ruc_en_universidad_peru(nombre):
         except:
             pass  # Puede que no aparezca
 
-        # Buscar la razón social en Google
+        # Buscar en Google
         caja = wait.until(EC.presence_of_element_located((By.NAME, "q")))
         caja.clear()
-        caja.send_keys(nombre)
+        caja.send_keys(consulta)
         caja.submit()
-        time.sleep(2)
+        time.sleep(2.5)
 
-        # Buscar el primer resultado que sea de universidadperu.com
+        # Buscar el primer resultado de universidadperu.com
         enlaces = driver.find_elements(By.CSS_SELECTOR, "a h3")
         url_universidad_peru = None
 
@@ -247,24 +248,35 @@ def buscar_ruc_en_universidad_peru(nombre):
             print("⚠️ No se encontró ningún resultado de universidadperu.com en Google.")
             return None
 
-        # Entrar al enlace de universidadperu.com
+        # Entrar a la página de universidadperu.com
         driver.get(url_universidad_peru)
         time.sleep(2)
 
-        # Buscar el RUC en el texto del cuerpo
+        # Extraer el texto completo
         texto = driver.find_element(By.TAG_NAME, "body").text
-        match = re.search(r"\b(\d{11})\b", texto)
+
+        # Buscar patrón que contenga RUC
+        # Ejemplo de formato en la web: RUC: 20603684291
+        match = re.search(r"RUC[:\s]+(\d{11})", texto)
         if match:
             ruc_encontrado = match.group(1)
             print(f"  ✅ RUC encontrado en universidadperu.com: {ruc_encontrado}")
             return ruc_encontrado
         else:
-            print("⚠️ No se encontró ningún número de RUC en la página.")
-            return None
+            # Intento alternativo: buscar cualquier número de 11 dígitos
+            match_alt = re.search(r"\b(\d{11})\b", texto)
+            if match_alt:
+                ruc_encontrado = match_alt.group(1)
+                print(f"  ✅ RUC (por coincidencia numérica): {ruc_encontrado}")
+                return ruc_encontrado
+            else:
+                print("⚠️ No se encontró ningún número de RUC en la página.")
+                return None
 
     except Exception as e:
         print(f"❌ Error durante la búsqueda del RUC en universidadperu.com: {e}")
         return None
+
 
 
 # ---------------- LECTURA DEL EXCEL ----------------
