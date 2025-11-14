@@ -2,6 +2,7 @@ import time
 import pandas as pd
 import re
 import os
+import glob
 from selenium import webdriver
 from selenium.webdriver.common.by import By
 from selenium.webdriver.support.ui import WebDriverWait
@@ -13,7 +14,19 @@ from selenium.common.exceptions import NoSuchElementException, ElementNotInterac
 
 # ---------------- CONFIGURACIÓN ----------------
 escritorio = r"F:\Programas sin finalizar\ScrapingSUNAT"
-ruta_entrada = os.path.join(escritorio, "empresas.xlsx")
+
+# Buscar archivos que empiecen con "empresas_" y terminen en ".xlsx"
+patron = os.path.join(escritorio, "empresas_*.xlsx")
+coincidencias = glob.glob(patron)
+
+if coincidencias:
+    ruta_entrada = coincidencias[0]
+    print(f"✔ Archivo encontrado dinámicamente: {ruta_entrada}")
+else:
+    # fallback a empresas.xlsx si no hay empresas_*.xlsx
+    ruta_entrada = os.path.join(escritorio, "empresas.xlsx")
+    print(f" No se encontró 'empresas_*.xlsx'. Usando archivo por defecto: {ruta_entrada}")
+
 ruta_salida = os.path.join(escritorio, "resultados_sunat_detallado.xlsx")
 
 opts = Options()
@@ -315,12 +328,12 @@ for razon in df["razon_social"]:
         ruc, nombre_empresa, reps = data
         if ruc == "baja":
             filas_a_agregar.append([
-                razon, "baja", "baja", "", "", "", ""
+                "baja", razon, "baja", "", "", "", ""
             ])
         elif reps:
             for dni, nombre_rep, cargo, fecha in reps:
                 filas_a_agregar.append([
-                    razon, ruc, nombre_empresa, dni, nombre_rep, cargo, fecha
+                    ruc, razon, nombre_rep, cargo, 
                 ])
         else:
             filas_a_agregar.append([
