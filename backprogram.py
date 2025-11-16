@@ -341,7 +341,7 @@ for razon in df["razon_social"]:
             ])
     else:
         filas_a_agregar.append([
-            razon, "", "No encontrado", "", "", "", ""
+           " ", razon, "No encontrado", "", "", "", ""
         ])
 
     # ---------------- GUARDAR RESULTADOS EN EL EXCEL ----------------
