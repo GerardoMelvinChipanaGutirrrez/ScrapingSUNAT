@@ -50,7 +50,7 @@ Esto instalará:
 - openpyxl → Permite leer/escribir archivos Excel
 
 
-### 📂 Cómo usar el scraper
+## 📂 Cómo usar el scraper
 
 Coloca tu archivo Excel en la carpeta del proyecto.
 
@@ -71,7 +71,7 @@ python scraper.py
 
 - Guardará todo en un nuevo archivo Excel con fecha y hora.
 
-### 🔧 Flujo de funcionamiento
+## 🔧 Flujo de funcionamiento
 
 - Leer Excel usando pandas.
 
@@ -97,7 +97,7 @@ python scraper.py
 
 - Guardar resultados en un archivo Excel final.
 
-### 🎯 Objetivo del proyecto
+## 🎯 Objetivo del proyecto
 
 - Este scraper fue desarrollado para automatizar la verificación masiva de empresas, ideal para:
 
